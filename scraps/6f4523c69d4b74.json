@@ -1,0 +1,30 @@
+{
+  "title": "CI/CD devkitのDaggerを試す + Jenkins上で動かしてみる",
+  "closed": false,
+  "archived": false,
+  "created_at": "2022-10-18",
+  "comments": [
+    {
+      "author": "r57ty7",
+      "created_at": "2022-10-18",
+      "body_markdown": "[Overview | Dagger](https://docs.dagger.io/)\n\nポータブルなCI/CDパイプライン devkit\nDockerコンテナ上で実行されて、どこでも動かすことができる。\n新しいCI/CDプラットフォームではなく、プラットフォーム上で実行できるレイヤーを追加するようなもの。\n\n今まで\n\n- CI/CDサービス固有の記法を学習する必要があり、移行したくなったときには書き換えが必要\n- ローカルで試しにくく、commit & pushしては動くか確認する作業が発生\n\nDaggerを使うと\n\n- プラットフォーム非依存\n- CUE言語を使って書ける(CUEの学習コストとYAMLのメンテどっちをとるか)\n- ローカルで実行できる",
+      "body_updated_at": "2022-10-19"
+    },
+    {
+      "author": "r57ty7",
+      "created_at": "2022-10-18",
+      "body_markdown": "## インストール\n\nMacの場合はHomebrewでインストールするのが簡単。\n\n`install.sh` を使ってインストールするときにバージョン指定できる\n\n```shell\ncurl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.2.19 sh\n\n./bin/dagger version\ndagger 0.2.19 (GIT_SHA) darwin/arm64\n```"
+    },
+    {
+      "author": "r57ty7",
+      "created_at": "2022-10-18",
+      "body_markdown": "## サンプル\n\n公式の [todoapp](https://github.com/dagger/todoapp) がサンプルとして用意されている\n\n```shell\ngit clone https://github.com/dagger/todoapp\ncd todoapp\ndagger project update\ndagger do build\n```\n\n`dagger do <Action>` で実行できる"
+    },
+    {
+      "author": "r57ty7",
+      "created_at": "2022-10-19",
+      "body_markdown": "## Jenkins上で利用する\n\nDockerがインストールされていればどこでも実行できるのが良いところ。\n各CI/CDでは、Daggerを実行する部分だけを書けばいい。\n\nJenkinsfileにDaggerのインストールからすべてベタ書きするとこんな感じ\n\n```groovy\npipeline {\n  agent any\n  environment {\n    // 環境変数にセット\n    NAME='John'\n  }\n\n  stages {\n    stage(\"setup\") {\n      steps {\n        sh '''\n          # グローバルにインストールずみなら不要\n          curl -L https://dl.dagger.io/dagger/install.sh | sh\n        \n          ./bin/dagger project init\n          ./bin/dagger project update\n        '''\n      }\n    }\n    stage(\"do\") {\n      steps {\n        sh '''\n        cat << EOF > dagger.cue\n        package main\n        \n        import (\n            \"dagger.io/dagger\"\n            \"dagger.io/dagger/core\"\n        )\n        \n        // Write a greeting to a file, and add it to a directory\n        #AddHello: {\n            // The input directory\n            dir: dagger.#FS\n            \n            name: string | *\"world\"\n\n            write: core.#WriteFile & {\n                input: dir\n                path: \"hello-\\\\(name).txt\"\n                contents: \"hello, \\\\(name)!\"\n            }\n        \n            // The directory with greeting message added\n            result: write.output\n        }\n        \n        dagger.#Plan & {\n            // Say hello by writing to a file\n            actions: hello: #AddHello & {\n                dir: client.filesystem.\".\".read.contents\n                name: client.env.NAME\n            }\n            client: {\n                filesystem: \".\": {\n                    read: contents: dagger.#FS\n                    write: contents: actions.hello.result\n                }\n                env : {\n                    NAME: string\n                }\n            }\n        }\n\n        EOF\n        \n        ./bin/dagger do hello\n        '''.stripIndent()\n      }\n    }    \n  }\n}\n\n```\n",
+      "body_updated_at": "2022-10-19"
+    }
+  ]
+}
